@@ -453,10 +453,209 @@ def get_dashboard_stats():
 #             "type": type(e).__name__
 #         }), 500
 
-# backend/api_server.py - Updated sales orders endpoint with cursor pagination
+# # backend/api_server.py - Updated sales orders endpoint with cursor pagination
+# @app.route('/api/sales-orders', methods=['GET'])
+# def get_sales_orders():
+#     """Get sales orders with cursor-based pagination and filters"""
+#     try:
+#         if not mongodb_connected or not mongo_client:
+#             logger.error("[API] Database not connected for sales orders")
+#             return jsonify({
+#                 "status": "error", 
+#                 "message": "Database connection failed",
+#                 "details": "MongoDB client not initialized"
+#             }), 500
+        
+#         logger.info("[API] Fetching sales orders...")
+        
+#         # Test connection
+#         mongo_client.admin.command('ping')
+        
+#         # Pagination parameters
+#         page = int(request.args.get('page', 1))
+#         limit = int(request.args.get('limit', 20))
+#         cursor = request.args.get('cursor', '')  # For cursor-based pagination
+        
+#         # Filter parameters
+#         date_filter = request.args.get('date_filter', '')
+#         order_number = request.args.get('order_number', '').strip()
+#         status_filter = request.args.get('status', '')
+#         dcl_status_filter = request.args.get('dcl_status', '')
+#         start_date = request.args.get('start_date', '')
+#         end_date = request.args.get('end_date', '')
+        
+#         logger.info(f"[API] Filters - date: {date_filter}, order_number: {order_number}, status: {status_filter}, dcl_status: {dcl_status_filter}")
+#         logger.info(f"[API] Pagination - page: {page}, limit: {limit}, cursor: {cursor}")
+        
+#         # Build MongoDB query
+#         query = {}
+        
+#         # Date filters
+#         if date_filter:
+#             from datetime import datetime, timedelta
+#             now = datetime.now()
+            
+#             if date_filter == 'today':
+#                 start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+#                 end_of_day = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+#                 query['created_at'] = {'$gte': start_of_day, '$lte': end_of_day}
+                
+#             elif date_filter == 'yesterday':
+#                 yesterday = now - timedelta(days=1)
+#                 start_of_yesterday = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
+#                 end_of_yesterday = yesterday.replace(hour=23, minute=59, second=59, microsecond=999999)
+#                 query['created_at'] = {'$gte': start_of_yesterday, '$lte': end_of_yesterday}
+                
+#             elif date_filter == 'last_7_days':
+#                 seven_days_ago = now - timedelta(days=7)
+#                 query['created_at'] = {'$gte': seven_days_ago}
+                
+#             elif date_filter == 'last_30_days':
+#                 thirty_days_ago = now - timedelta(days=30)
+#                 query['created_at'] = {'$gte': thirty_days_ago}
+        
+#         # Custom date range
+#         if start_date and end_date:
+#             try:
+#                 start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+#                 end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+#                 query['created_at'] = {'$gte': start_dt, '$lte': end_dt}
+#             except ValueError:
+#                 logger.warning(f"[API] Invalid date format: start_date={start_date}, end_date={end_date}")
+        
+#         # Order number filter (partial match)
+#         if order_number:
+#             query['katana_order_number'] = {'$regex': order_number, '$options': 'i'}
+        
+#         # Status filters
+#         if status_filter:
+#             query['status'] = status_filter
+            
+#         if dcl_status_filter:
+#             query['dcl_status'] = dcl_status_filter
+        
+#         # ✅ OPTIMIZED: Use different pagination strategies based on page number
+#         if page <= 5:  # For first 5 pages, use skip (fast for small numbers)
+#             skip = (page - 1) * limit
+#             logger.info(f"[API] Using skip-based pagination: skip={skip}, limit={limit}")
+            
+#             sales_orders = list(
+#                 sales_orders_collection.find(query)
+#                 .sort("created_at", -1)
+#                 .skip(skip)
+#                 .limit(limit + 1)  # Get one extra to check if there's a next page
+#             )
+            
+#         else:  # For later pages, use cursor-based pagination
+#             logger.info(f"[API] Using cursor-based pagination for page {page}")
+            
+#             if cursor:
+#                 # Decode cursor (it's the created_at timestamp of the last item from previous page)
+#                 try:
+#                     from bson import ObjectId
+#                     cursor_time = datetime.fromisoformat(cursor.replace('Z', '+00:00'))
+#                     query['created_at'] = {**query.get('created_at', {}), '$lt': cursor_time}
+#                 except Exception as e:
+#                     logger.warning(f"[API] Invalid cursor: {cursor}, error: {e}")
+            
+#             sales_orders = list(
+#                 sales_orders_collection.find(query)
+#                 .sort("created_at", -1)
+#                 .limit(limit + 1)  # Get one extra to check if there's a next page
+#             )
+        
+#         # Check if there are more results
+#         has_next = len(sales_orders) > limit
+#         if has_next:
+#             sales_orders = sales_orders[:-1]  # Remove the extra record
+        
+#         logger.info(f"[API] Found {len(sales_orders)} sales orders")
+        
+#         # Format data with complete structure for frontend
+#         formatted_orders = []
+#         next_cursor = None
+        
+#         for i, order in enumerate(sales_orders):
+#             katana_data = order.get('katana_order_data', {})
+#             addresses = katana_data.get('addresses', [{}])
+            
+#             formatted_order = {
+#                 "id": str(order.get('_id')),
+#                 "_id": str(order.get('_id')),
+#                 "katana_order_id": order.get('katana_order_id'),
+#                 "katana_order_number": order.get('katana_order_number', 'N/A'),
+#                 "order_number": order.get('katana_order_number', 'N/A'),
+#                 "status": order.get('status', 'N/A'),
+#                 "dcl_status": order.get('dcl_status', 'N/A'),
+#                 "total": katana_data.get('total', 0),
+#                 "currency": katana_data.get('currency', 'USD'),
+#                 "customer_company": addresses[0].get('company', 'N/A') if addresses else 'N/A',
+#                 "customer_name": f"{addresses[0].get('first_name', '')} {addresses[0].get('last_name', '')}".strip() if addresses else 'N/A',
+#                 "items_count": len(katana_data.get('sales_order_rows', [])),
+#                 "location_id": katana_data.get('location_id'),
+#                 "created_at": order.get('created_at'),
+#                 "updated_at": order.get('updated_at'),
+#                 "order_created_date": katana_data.get('order_created_date'),
+#                 "delivery_date": katana_data.get('delivery_date'),
+#                 "katana_order_data": katana_data
+#             }
+#             formatted_orders.append(formatted_order)
+            
+#             # Set next cursor to the last item's created_at
+#             if i == len(sales_orders) - 1 and has_next:
+#                 next_cursor = order.get('created_at').isoformat() if order.get('created_at') else None
+        
+#         # ✅ OPTIMIZED: Get total count only when needed and cache it
+#         if page == 1:  # Only get total count on first page
+#             total_count = sales_orders_collection.count_documents(query)
+#         else:
+#             # For other pages, estimate or don't show exact count
+#             total_count = None
+        
+#         # Calculate pagination info
+#         if total_count is not None:
+#             total_pages = (total_count + limit - 1) // limit
+#         else:
+#             total_pages = None  # Unknown for cursor-based pagination
+        
+#         has_prev = page > 1
+        
+#         return jsonify({
+#             "status": "success",
+#             "data": formatted_orders,
+#             "pagination": {
+#                 "current_page": page,
+#                 "total_pages": total_pages,
+#                 "total_count": total_count,
+#                 "has_next": has_next,
+#                 "has_prev": has_prev,
+#                 "limit": limit,
+#                 "next_cursor": next_cursor  # For cursor-based pagination
+#             },
+#             "filters_applied": {
+#                 "date_filter": date_filter,
+#                 "order_number": order_number,
+#                 "status": status_filter,
+#                 "dcl_status": dcl_status_filter,
+#                 "start_date": start_date,
+#                 "end_date": end_date
+#             }
+#         })
+        
+#     except Exception as e:
+#         logger.error(f"[API ERROR] Sales orders error: {e}")
+#         import traceback
+#         logger.error(f"[API ERROR] Traceback: {traceback.format_exc()}")
+#         return jsonify({
+#             "status": "error", 
+#             "message": str(e),
+#             "type": type(e).__name__
+#         }), 500
+
+# backend/app.py - FIXED pagination logic
 @app.route('/api/sales-orders', methods=['GET'])
 def get_sales_orders():
-    """Get sales orders with cursor-based pagination and filters"""
+    """Get sales orders with consistent pagination"""
     try:
         if not mongodb_connected or not mongo_client:
             logger.error("[API] Database not connected for sales orders")
@@ -474,7 +673,6 @@ def get_sales_orders():
         # Pagination parameters
         page = int(request.args.get('page', 1))
         limit = int(request.args.get('limit', 20))
-        cursor = request.args.get('cursor', '')  # For cursor-based pagination
         
         # Filter parameters
         date_filter = request.args.get('date_filter', '')
@@ -485,7 +683,7 @@ def get_sales_orders():
         end_date = request.args.get('end_date', '')
         
         logger.info(f"[API] Filters - date: {date_filter}, order_number: {order_number}, status: {status_filter}, dcl_status: {dcl_status_filter}")
-        logger.info(f"[API] Pagination - page: {page}, limit: {limit}, cursor: {cursor}")
+        logger.info(f"[API] Pagination - page: {page}, limit: {limit}")
         
         # Build MongoDB query
         query = {}
@@ -534,48 +732,31 @@ def get_sales_orders():
         if dcl_status_filter:
             query['dcl_status'] = dcl_status_filter
         
-        # ✅ OPTIMIZED: Use different pagination strategies based on page number
-        if page <= 5:  # For first 5 pages, use skip (fast for small numbers)
-            skip = (page - 1) * limit
-            logger.info(f"[API] Using skip-based pagination: skip={skip}, limit={limit}")
-            
-            sales_orders = list(
-                sales_orders_collection.find(query)
-                .sort("created_at", -1)
-                .skip(skip)
-                .limit(limit + 1)  # Get one extra to check if there's a next page
-            )
-            
-        else:  # For later pages, use cursor-based pagination
-            logger.info(f"[API] Using cursor-based pagination for page {page}")
-            
-            if cursor:
-                # Decode cursor (it's the created_at timestamp of the last item from previous page)
-                try:
-                    from bson import ObjectId
-                    cursor_time = datetime.fromisoformat(cursor.replace('Z', '+00:00'))
-                    query['created_at'] = {**query.get('created_at', {}), '$lt': cursor_time}
-                except Exception as e:
-                    logger.warning(f"[API] Invalid cursor: {cursor}, error: {e}")
-            
-            sales_orders = list(
-                sales_orders_collection.find(query)
-                .sort("created_at", -1)
-                .limit(limit + 1)  # Get one extra to check if there's a next page
-            )
+        # ✅ FIXED: Always get total count for consistent pagination
+        logger.info("[API] Getting total count...")
+        total_count = sales_orders_collection.count_documents(query)
+        logger.info(f"[API] Total count: {total_count}")
         
-        # Check if there are more results
-        has_next = len(sales_orders) > limit
-        if has_next:
-            sales_orders = sales_orders[:-1]  # Remove the extra record
+        # Calculate pagination info
+        total_pages = (total_count + limit - 1) // limit if total_count > 0 else 0
+        skip = (page - 1) * limit
+        
+        # ✅ FIXED: Use consistent skip-based pagination for simplicity
+        logger.info(f"[API] Using skip-based pagination: skip={skip}, limit={limit}")
+        
+        sales_orders = list(
+            sales_orders_collection.find(query)
+            .sort("created_at", -1)
+            .skip(skip)
+            .limit(limit)
+        )
         
         logger.info(f"[API] Found {len(sales_orders)} sales orders")
         
         # Format data with complete structure for frontend
         formatted_orders = []
-        next_cursor = None
         
-        for i, order in enumerate(sales_orders):
+        for order in sales_orders:
             katana_data = order.get('katana_order_data', {})
             addresses = katana_data.get('addresses', [{}])
             
@@ -600,38 +781,28 @@ def get_sales_orders():
                 "katana_order_data": katana_data
             }
             formatted_orders.append(formatted_order)
-            
-            # Set next cursor to the last item's created_at
-            if i == len(sales_orders) - 1 and has_next:
-                next_cursor = order.get('created_at').isoformat() if order.get('created_at') else None
         
-        # ✅ OPTIMIZED: Get total count only when needed and cache it
-        if page == 1:  # Only get total count on first page
-            total_count = sales_orders_collection.count_documents(query)
-        else:
-            # For other pages, estimate or don't show exact count
-            total_count = None
-        
-        # Calculate pagination info
-        if total_count is not None:
-            total_pages = (total_count + limit - 1) // limit
-        else:
-            total_pages = None  # Unknown for cursor-based pagination
-        
+        # ✅ FIXED: Always provide consistent pagination data
+        has_next = page < total_pages
         has_prev = page > 1
+        
+        pagination_data = {
+            "current_page": page,
+            "total_pages": total_pages,
+            "total_count": total_count,
+            "has_next": has_next,
+            "has_prev": has_prev,
+            "limit": limit,
+            "showing_from": skip + 1 if total_count > 0 else 0,
+            "showing_to": min(skip + len(formatted_orders), total_count)
+        }
+        
+        logger.info(f"[API] Pagination data: {pagination_data}")
         
         return jsonify({
             "status": "success",
             "data": formatted_orders,
-            "pagination": {
-                "current_page": page,
-                "total_pages": total_pages,
-                "total_count": total_count,
-                "has_next": has_next,
-                "has_prev": has_prev,
-                "limit": limit,
-                "next_cursor": next_cursor  # For cursor-based pagination
-            },
+            "pagination": pagination_data,
             "filters_applied": {
                 "date_filter": date_filter,
                 "order_number": order_number,
@@ -651,7 +822,6 @@ def get_sales_orders():
             "message": str(e),
             "type": type(e).__name__
         }), 500
-
 
 # Add filter options endpoint
 @app.route('/api/sales-orders/filters', methods=['GET'])
