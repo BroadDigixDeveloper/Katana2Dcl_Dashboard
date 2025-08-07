@@ -670,6 +670,8 @@ def get_sales_orders():
         # Test connection
         mongo_client.admin.command('ping')
         
+        limit = min(int(request.args.get('limit', 20)), 100)
+
         # Pagination parameters
         page = int(request.args.get('page', 1))
         limit = int(request.args.get('limit', 20))
@@ -756,32 +758,77 @@ def get_sales_orders():
         # Format data with complete structure for frontend
         formatted_orders = []
         
-        for order in sales_orders:
-            katana_data = order.get('katana_order_data', {})
-            addresses = katana_data.get('addresses', [{}])
+        # for order in sales_orders:
+        #     katana_data = order.get('katana_order_data', {})
+        #     # addresses = katana_data.get('addresses', [{}])
             
-            formatted_order = {
-                "id": str(order.get('_id')),
-                "_id": str(order.get('_id')),
-                "katana_order_id": order.get('katana_order_id'),
-                "katana_order_number": order.get('katana_order_number', 'N/A'),
-                "order_number": order.get('katana_order_number', 'N/A'),
-                "status": order.get('status', 'N/A'),
-                "dcl_status": order.get('dcl_status', 'N/A'),
-                "total": katana_data.get('total', 0),
-                "currency": katana_data.get('currency', 'USD'),
-                "customer_company": addresses[0].get('company', 'N/A') if addresses else 'N/A',
-                "customer_name": f"{addresses[0].get('first_name', '')} {addresses[0].get('last_name', '')}".strip() if addresses else 'N/A',
-                "items_count": len(katana_data.get('sales_order_rows', [])),
-                "location_id": katana_data.get('location_id'),
-                "created_at": order.get('created_at'),
-                "updated_at": order.get('updated_at'),
-                "order_created_date": katana_data.get('order_created_date'),
-                "delivery_date": katana_data.get('delivery_date'),
-                "katana_order_data": katana_data
-            }
-            formatted_orders.append(formatted_order)
+        #     formatted_order = {
+        #         "id": str(order.get('_id')),
+        #         "_id": str(order.get('_id')),
+        #         "katana_order_id": order.get('katana_order_id'),
+        #         "katana_order_number": order.get('katana_order_number', 'N/A'),
+        #         "order_number": order.get('katana_order_number', 'N/A'),
+        #         "status": order.get('status', 'N/A'),
+        #         "dcl_status": order.get('dcl_status', 'N/A'),
+        #         # "total": katana_data.get('total', 0),
+        #         "currency": katana_data.get('currency', 'USD'),
+        #         # "customer_company": addresses[0].get('company', 'N/A') if addresses else 'N/A',
+        #         # "customer_name": f"{addresses[0].get('first_name', '')} {addresses[0].get('last_name', '')}".strip() if addresses else 'N/A',
+        #         # "items_count": len(katana_data.get('sales_order_rows', [])),
+        #         # "location_id": katana_data.get('location_id'),
+        #         # "created_at": order.get('created_at'),
+        #         # "updated_at": order.get('updated_at'),
+        #         "order_created_date": katana_data.get('order_created_date'),
+        #         # "delivery_date": katana_data.get('delivery_date'),
+        #         "katana_order_data": katana_data
+        #     }
+        #     formatted_orders.append(formatted_order)
+
+        #     try:
+        #         katana_data = order.get('katana_order_data', {})
+        #         logger.debug(f"[ORDER DEBUG] Processing order: {order.get('katana_order_number')}")
+        #         logger.debug(f"[ORDER DEBUG] Order created_at: {order.get('created_at')}")
+        #         logger.debug(f"[ORDER DEBUG] Katana data: {katana_data}")
+        #     except Exception as e:
+        #         logger.error(f"[ORDER DEBUG] Error processing order ID: {order.get('_id')}, error: {e}")
         
+
+        for order in sales_orders:
+            try:
+                katana_data = order.get('katana_order_data') or {}
+
+                formatted_order = {
+                    "id": str(order.get('_id')),
+                    "_id": str(order.get('_id')),
+                    "katana_order_id": order.get('katana_order_id'),
+                    "katana_order_number": order.get('katana_order_number', 'N/A'),
+                    "order_number": order.get('katana_order_number', 'N/A'),
+                    "status": order.get('status', 'N/A'),
+                    "dcl_status": order.get('dcl_status', 'N/A'),
+                    "total": katana_data.get('total', 0),
+                    "currency": katana_data.get('currency', 'USD'),
+                    "items_count": len(katana_data.get('sales_order_rows', []) if isinstance(katana_data.get('sales_order_rows', []), list) else []),
+                    "location_id": katana_data.get('location_id'),
+                    "created_at": order.get('created_at'),
+                    "updated_at": order.get('updated_at'),
+                    "order_created_date": katana_data.get('order_created_date'),
+                    "delivery_date": katana_data.get('delivery_date'),
+                    "katana_order_data": {
+                        "order_created_date": katana_data.get("order_created_date"),
+                        "delivery_date": katana_data.get("delivery_date"),
+                        "total": katana_data.get("total"),
+                        "currency": katana_data.get("currency"),
+                        "sales_order_rows": katana_data.get("sales_order_rows", []) if isinstance(katana_data.get("sales_order_rows", []), list) else []
+                    }
+                }
+
+                formatted_orders.append(formatted_order)
+
+            except Exception as e:
+                logger.error(f"[API ERROR] Skipping order ID: {order.get('_id')} due to error: {e}")
+                continue
+
+
         # ✅ FIXED: Always provide consistent pagination data
         has_next = page < total_pages
         has_prev = page > 1
@@ -822,6 +869,23 @@ def get_sales_orders():
             "message": str(e),
             "type": type(e).__name__
         }), 500
+
+
+
+@app.route('/api/sales-orders/bad-records', methods=['GET'])
+def find_bad_sales_orders():
+    bad_orders = []
+    for order in sales_orders_collection.find({}).sort("created_at", -1):
+        try:
+            katana_data = order.get('katana_order_data')
+            if not isinstance(katana_data, dict):
+                bad_orders.append(str(order.get('_id')))
+            elif not isinstance(katana_data.get('sales_order_rows', []), list):
+                bad_orders.append(str(order.get('_id')))
+        except Exception:
+            bad_orders.append(str(order.get('_id')))
+    return jsonify({"bad_records": bad_orders, "count": len(bad_orders)})
+
 
 # Add filter options endpoint
 @app.route('/api/sales-orders/filters', methods=['GET'])
