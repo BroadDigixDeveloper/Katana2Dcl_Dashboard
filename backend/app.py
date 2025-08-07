@@ -870,6 +870,27 @@ def get_sales_orders():
             "type": type(e).__name__
         }), 500
 
+@app.route('/api/sales-stats', methods=['GET'])
+def get_sales_stats():
+    orders = list(sales_orders_collection.find({}))
+    
+    from datetime import datetime
+    today = datetime.utcnow().date()
+
+    orders_today = [o for o in orders if o.get("created_at") and o["created_at"].date() == today]
+    completed = [o for o in orders if o.get("status") == "complete"]
+    pending = [o for o in orders if o.get("status") == "pending"]
+    failed = [o for o in orders if o.get("status") == "failed"]
+
+    stats = {
+        "ordersToday": len(orders_today),
+        "completedOrders": len(completed),
+        "pendingOrders": len(pending),
+        "failedOrders": len(failed),
+        "successRate": round(len(completed) / len(orders) * 100) if orders else 0,
+        "avgProcessingTime": "3.0 min"  # Replace with actual average if needed
+    }
+    return jsonify({"status": "success", "data": stats})
 
 
 @app.route('/api/sales-orders/bad-records', methods=['GET'])

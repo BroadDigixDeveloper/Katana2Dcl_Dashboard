@@ -9,7 +9,9 @@ import {
 } from "lucide-react";
 import { MetricCard } from "@/components/dashboard/MetricCard";
 import { RecentOrdersTable } from "@/components/dashboard/RecentOrdersTable";
-import { OrderFlowChart } from "@/components/dashboard/OrderFlowChart";
+// import { OrderFlowChart } from "@/components/dashboard/OrderFlowChart";
+import OrderFlowChart from "@/components/dashboard/OrderFlowChart";
+
 import { StatusDistributionChart } from "@/components/dashboard/StatusDistributionChart";
 import { useDashboardData } from "@/hooks/useDashboardData";
 import { Button } from "@/components/ui/button";
